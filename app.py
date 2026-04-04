@@ -1,65 +1,26 @@
 import streamlit as st
 import datetime
 import os
-import pickle
-import google.generativeai as genai
 from dotenv import load_dotenv
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+from cal.calender_service import add_event, get_upcoming_events
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Load environment variables
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Google Calendar setup
-SCOPES = ['https://www.googleapis.com/auth/calendar']
-
-def get_calendar_service():
-    creds = None
-    if os.path.exists('token.json'):
-        with open('token.json', 'rb') as token:
-            creds = pickle.load(token)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open('token.json', 'wb') as token:
-            pickle.dump(creds, token)
-    return build('calendar', 'v3', credentials=creds)
-
-def add_to_calendar(task, date, time):
-    try:
-        service = get_calendar_service()
-        start_time = datetime.datetime.combine(date, time)
-        end_time = start_time + datetime.timedelta(hours=1)
-        event = {
-            'summary': task,
-            'start': {
-                'dateTime': start_time.isoformat(),
-                'timeZone': 'Asia/Kolkata'
-            },
-            'end': {
-                'dateTime': end_time.isoformat(),
-                'timeZone': 'Asia/Kolkata'
-            },
-        }
-        service.events().insert(calendarId='primary', body=event).execute()
-        return True
-    except Exception as e:
-        st.error(f"Calendar sync failed: {e}")
-        return False
-
-# Gemini AI function
+#Ask gemini
 def ask_gemini(prompt):
     try:
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
-        return response.text
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            google_api_key=os.getenv("GEMINI_API_KEY"),
+            client_options={"api_endpoint": "generativelanguage.googleapis.com"},
+            transport="rest"
+        )
+        response = llm.invoke(prompt)
+        return response.content
     except Exception as e:
+        st.write("DEBUG ERROR:", str(e))
         return f"AI error: {e}"
 
 # ---------------- UI START ---------------- #
@@ -87,7 +48,7 @@ if st.button("Add Task"):
             "date": date,
             "time": time
         })
-        add_to_calendar(task, date, time)
+        add_event(task, date, time)
         st.success("Task added + synced to Google Calendar ✅")
     else:
         st.warning("Please enter a task name!")
@@ -109,6 +70,20 @@ for i, t in enumerate(sorted_tasks):
         if st.button("❌", key=f"delete_{i}"):
             st.session_state.tasks.remove(t)
             st.rerun()
+
+# ---------------- UPCOMING EVENTS ---------------- #
+
+st.subheader("📅 Upcoming Calendar Events")
+
+if st.button("Fetch from Google Calendar"):
+    events = get_upcoming_events()
+    if events:
+        for event in events:
+            start = event['start'].get(
+                'dateTime', event['start'].get('date'))
+            st.write(f"📌 {event['summary']} — {start}")
+    else:
+        st.info("No upcoming events found!")
 
 # ---------------- AI CHAT ASSISTANT ---------------- #
 
