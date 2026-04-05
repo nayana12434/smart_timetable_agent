@@ -9,18 +9,17 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 load_dotenv()
 
 #Ask gemini
+from groq import Groq
+
 def ask_gemini(prompt):
     try:
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            google_api_key=os.getenv("GEMINI_API_KEY"),
-            client_options={"api_endpoint": "generativelanguage.googleapis.com"},
-            transport="rest"
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}]
         )
-        response = llm.invoke(prompt)
-        return response.content
+        return response.choices[0].message.content
     except Exception as e:
-        st.write("DEBUG ERROR:", str(e))
         return f"AI error: {e}"
 
 # ---------------- UI START ---------------- #
