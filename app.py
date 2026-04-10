@@ -222,59 +222,56 @@ if st.button("Parse Schedule"):
 #show parsed result + confirm            
 def parse_schedule_input(user_text):
     from datetime import datetime, timedelta
-    import json
     import re
 
-    prompt = f"""
-Extract task, date and time from this input:
-"{user_text}"
+    text = user_text.lower()
 
-Rules:
-- Return ONLY valid JSON
-- Date format: YYYY-MM-DD
-- Time format: HH:MM:SS (24-hour)
+    # -------------------------------
+    # 🔹 STEP 1: EXTRACT TIME
+    # -------------------------------
+    time_match = re.search(r'(\d{1,2})\s*(am|pm)', text)
+    if not time_match:
+        return {"error": "Could not detect time"}
 
-Example:
-{{
-  "task": "study math",
-  "date": "2026-04-11",
-  "time": "21:00:00"
-}}
-"""
+    hour = int(time_match.group(1))
+    period = time_match.group(2)
 
-    response = ask_gemini(prompt)
+    if period == "pm" and hour != 12:
+        hour += 12
+    if period == "am" and hour == 12:
+        hour = 0
 
-    try:
-        # 🔥 STEP 1: Extract JSON safely
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
-        if not json_match:
-            return {"error": "Could not extract structured data"}
+    time_str = f"{hour:02d}:00:00"
 
-        data = json.loads(json_match.group())
+    # Remove time from text
+    text = text.replace(time_match.group(), "")
 
-        # 🔥 STEP 2: Handle "tomorrow"
-        if "tomorrow" in user_text.lower():
-            tomorrow = datetime.now().date() + timedelta(days=1)
-            data["date"] = str(tomorrow)
+    # -------------------------------
+    # 🔹 STEP 2: EXTRACT DATE
+    # -------------------------------
+    if "tomorrow" in text:
+        date = datetime.now().date() + timedelta(days=1)
+        text = text.replace("tomorrow", "")
+    elif "today" in text:
+        date = datetime.now().date()
+        text = text.replace("today", "")
+    else:
+        date = datetime.now().date()
 
-        # 🔥 STEP 3: Convert time to 24-hour format (if needed)
-        try:
-            # Case: "9 pm"
-            time_obj = datetime.strptime(data["time"], "%I %p")
-            data["time"] = time_obj.strftime("%H:%M:%S")
-        except:
-            try:
-                # Case: already "21:00" or "21:00:00"
-                time_obj = datetime.strptime(data["time"], "%H:%M")
-                data["time"] = time_obj.strftime("%H:%M:%S")
-            except:
-                pass  # Leave as-is if already correct
+    date_str = str(date)
 
-        # 🔥 STEP 4: Validate fields
-        if not all(k in data for k in ["task", "date", "time"]):
-            return {"error": "Missing required fields"}
+    # -------------------------------
+    # 🔹 STEP 3: CLEAN TASK
+    # -------------------------------
+    # Remove filler words
+    text = re.sub(r'\bat\b', '', text)
+    task = text.strip()
 
-        return data
+    if not task:
+        return {"error": "Could not detect task"}
 
-    except Exception as e:
-        return {"error": f"Parsing failed: {e}"}
+    return {
+        "task": task,
+        "date": date_str,
+        "time": time_str
+    }
