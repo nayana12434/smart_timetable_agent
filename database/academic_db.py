@@ -111,3 +111,52 @@ def get_upcoming_exams():
     exams = cursor.fetchall()
     conn.close()
     return exams
+def delete_course(course_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM courses WHERE id = ?", (course_id,))
+    cursor.execute("DELETE FROM class_schedule WHERE course_id = ?", (course_id,))
+    cursor.execute("DELETE FROM exams WHERE course_id = ?", (course_id,))
+    conn.commit()
+    conn.close()
+
+def delete_class(class_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM class_schedule WHERE id = ?", (class_id,))
+    conn.commit()
+    conn.close()
+
+def delete_exam(exam_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
+    conn.commit()
+    conn.close()
+
+def get_all_classes():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT cs.id, c.name, cs.class_type, cs.day_of_week, 
+               cs.start_time, cs.end_time, cs.room
+        FROM class_schedule cs
+        JOIN courses c ON cs.course_id = c.id
+        ORDER BY cs.day_of_week, cs.start_time
+    ''')
+    classes = cursor.fetchall()
+    conn.close()
+    return classes
+
+def get_all_exams():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT e.id, c.name, e.exam_type, e.exam_date, e.start_time, e.room
+        FROM exams e
+        JOIN courses c ON e.course_id = c.id
+        ORDER BY e.exam_date
+    ''')
+    exams = cursor.fetchall()
+    conn.close()
+    return exams

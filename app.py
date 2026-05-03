@@ -1,3 +1,8 @@
+from database.academic_db import (
+    init_academic_db, add_course, get_all_courses, delete_course,
+    add_class_schedule, get_schedule_by_day, get_all_classes, delete_class,
+    add_exam, get_upcoming_exams, get_all_exams, delete_exam
+)
 import streamlit as st
 import os
 import re
@@ -70,6 +75,93 @@ st.set_page_config(
     page_icon="🗓️",
     layout="wide"
 )
+
+# ---------------- CUSTOM STYLING ---------------- #
+
+st.markdown("""
+<style>
+    /* Main background */
+    .stApp {
+        background-color: #0f1117;
+    }
+    
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background-color: #1a1f2e;
+        border-right: 2px solid #2d3748;
+    }
+    
+    /* Title styling */
+    h1 {
+        color: #667eea;
+        text-align: center;
+        font-size: 2.5rem !important;
+        font-weight: 800 !important;
+    }
+    
+    /* Subheader styling */
+    h2, h3 {
+        color: #764ba2;
+    }
+    
+    /* Button styling */
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        width: 100%;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Input fields */
+    .stTextInput > div > div > input {
+        background-color: #1a1f2e;
+        border: 1px solid #667eea;
+        border-radius: 8px;
+        color: white;
+    }
+    
+    /* Metric cards */
+    [data-testid="metric-container"] {
+        background-color: #1a1f2e;
+        border: 1px solid #2d3748;
+        border-radius: 10px;
+        padding: 10px;
+    }
+    
+    /* Success/info/warning boxes */
+    .stSuccess {
+        border-radius: 10px;
+    }
+    
+    .stInfo {
+        border-radius: 10px;
+    }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #1a1f2e;
+        border-radius: 10px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        color: #667eea;
+    }
+    
+    /* Divider */
+    hr {
+        border-color: #2d3748;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------- SIDEBAR ---------------- #
 
@@ -155,22 +247,25 @@ elif page == "➕ Add Task":
         else:
             conflicts = check_conflict(date, time)
             if conflicts:
+                st.session_state.conflict_task = task
+                st.session_state.conflict_date = date
+                st.session_state.conflict_suggestions = suggest_slots(date, time)
                 st.warning(f"⚠️ Conflict detected with: {', '.join(conflicts)}")
-                suggestions = suggest_slots(date, time)
-                if suggestions:
-                    st.info("Suggested free slots:")
-                    for i, (s_date, s_time) in enumerate(suggestions):
-                        if st.button(f"{s_date} at {s_time}", key=f"suggest_{i}"):
-                            add_task(task, s_date, s_time)
-                            add_event(task, s_date, s_time)
-                            st.success(f"Scheduled at {s_date} {s_time} ✅")
-                            st.rerun()
-                else:
-                    st.error("No available slots found!")
             else:
                 add_task(task, date, time)
                 add_event(task, date, time)
                 st.success("Task added + synced to Google Calendar ✅")
+
+    if "conflict_suggestions" in st.session_state:
+        st.info("Suggested free slots:")
+        for i, (s_date, s_time) in enumerate(st.session_state.conflict_suggestions):
+            if st.button(f"{s_date} at {s_time}", key=f"suggest_{i}"):
+                add_task(st.session_state.conflict_task, s_date, s_time)
+                add_event(st.session_state.conflict_task, s_date, s_time)
+                st.success(f"Scheduled at {s_date} {s_time} ✅")
+                del st.session_state.conflict_suggestions
+                del st.session_state.conflict_task
+                st.rerun()
 
     st.divider()
     st.subheader("🧠 Smart Scheduling (NLP)")
@@ -372,12 +467,12 @@ Include break times and study tips. Keep it concise."""
             st.info("No exams scheduled yet!")
 
 # ---------------- ACADEMIC MANAGER ---------------- #
-
 elif page == "🎓 Academic Manager":
     st.subheader("🎓 Academic Schedule Manager")
 
     tab1, tab2, tab3 = st.tabs(["📚 Courses", "📅 Class Schedule", "📝 Exams"])
 
+    # ---------------- TAB 1: COURSES ---------------- #
     with tab1:
         st.write("### Add Course")
         col1, col2 = st.columns(2)
@@ -391,16 +486,27 @@ elif page == "🎓 Academic Manager":
             if course_name:
                 add_course(course_name, course_code, credits, professor)
                 st.success(f"Course {course_name} added! ✅")
+                st.rerun()
             else:
                 st.warning("Please enter a course name!")
+
+        st.divider()
         st.write("### Your Courses")
         courses = get_all_courses()
         if courses:
             for c in courses:
-                st.write(f"📚 **{c[1]}** ({c[2]}) — {c[3]} credits — Prof. {c[4]}")
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.write(f"📚 **{c[1]}** ({c[2]}) — {c[3]} credits — Prof. {c[4]}")
+                with col2:
+                    if st.button("🗑️", key=f"del_course_{c[0]}"):
+                        delete_course(c[0])
+                        st.success(f"{c[1]} deleted!")
+                        st.rerun()
         else:
             st.info("No courses added yet!")
 
+    # ---------------- TAB 2: CLASS SCHEDULE ---------------- #
     with tab2:
         st.write("### Add Class")
         courses = get_all_courses()
@@ -416,6 +522,7 @@ elif page == "🎓 Academic Manager":
             with col2:
                 end_time = st.time_input("End Time", key="class_end")
             room = st.text_input("Room", placeholder="e.g. Room 301")
+
             if st.button("Add Class"):
                 add_class_schedule(
                     course_options[selected_course],
@@ -423,20 +530,27 @@ elif page == "🎓 Academic Manager":
                     str(start_time), str(end_time), room
                 )
                 st.success("Class added! ✅")
-            st.write("### View Schedule by Day")
-            view_day = st.selectbox("Select Day", ["Monday", "Tuesday", "Wednesday",
-                                                    "Thursday", "Friday", "Saturday"],
-                                    key="view_day")
-            if st.button("View Schedule"):
-                schedule = get_schedule_by_day(view_day)
-                if schedule:
-                    for s in schedule:
-                        st.write(f"📖 **{s[0]}** ({s[1]}) — {s[2]} to {s[3]} | Room: {s[4]}")
-                else:
-                    st.info(f"No classes on {view_day}!")
+                st.rerun()
+
+            st.divider()
+            st.write("### All Classes")
+            classes = get_all_classes()
+            if classes:
+                for cls in classes:
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.write(f"📖 **{cls[1]}** ({cls[2]}) — {cls[3]} | {cls[4]} to {cls[5]} | Room: {cls[6]}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_class_{cls[0]}"):
+                            delete_class(cls[0])
+                            st.success("Class deleted!")
+                            st.rerun()
+            else:
+                st.info("No classes added yet!")
         else:
             st.warning("Please add courses first!")
 
+    # ---------------- TAB 3: EXAMS ---------------- #
     with tab3:
         st.write("### Add Exam")
         courses = get_all_courses()
@@ -449,6 +563,7 @@ elif page == "🎓 Academic Manager":
             exam_date = st.date_input("Exam Date", key="exam_date")
             exam_time = st.time_input("Exam Time", key="exam_time")
             exam_room = st.text_input("Exam Room", placeholder="e.g. Hall A")
+
             if st.button("Add Exam"):
                 add_exam(
                     course_options[selected_course],
@@ -456,11 +571,25 @@ elif page == "🎓 Academic Manager":
                     str(exam_time), exam_room
                 )
                 st.success("Exam added! ✅")
-            st.write("### Upcoming Exams")
-            exams = get_upcoming_exams()
+                st.rerun()
+
+            st.divider()
+            st.write("### All Exams")
+            exams = get_all_exams()
             if exams:
                 for e in exams:
-                    st.write(f"📝 **{e[0]}** — {e[1]} on {e[2]} at {e[3]} | Room: {e[4]}")
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        days_left = days_until_exam(e[3])
+                        if days_left is not None and days_left >= 0:
+                            st.write(f"📝 **{e[1]}** — {e[2]} on {e[3]} at {e[4]} | Room: {e[5]} | {days_left} days left")
+                        else:
+                            st.write(f"📝 **{e[1]}** — {e[2]} on {e[3]} at {e[4]} | Room: {e[5]}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_exam_{e[0]}"):
+                            delete_exam(e[0])
+                            st.success("Exam deleted!")
+                            st.rerun()
             else:
                 st.info("No exams scheduled yet!")
         else:
