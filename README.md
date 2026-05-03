@@ -4,7 +4,7 @@ An AI-powered academic scheduling assistant built with Python, Streamlit, and Gr
 
 ## 👥 Team
 - Nayana (Backend, AI, Deployment)
-- [Friend's Name] (UI, Testing)
+- Megharanjini,Shubhashree,Sinchana (UI, Testing)
 
 ## 🚀 Features
 - ✅ Add/delete/complete tasks with Google Calendar sync
@@ -29,3 +29,6 @@ An AI-powered academic scheduling assistant built with Python, Streamlit, and Gr
 ```bash
 git clone https://github.com/nayana12434/smart_timetable_agent.git
 cd smart_timetable_agent
+
+## 🌐 Live Demo
+[Click here](https://smarttimetableagent-zhygyajukuymnym36stxlw.streamlit.app/)
