@@ -231,3 +231,193 @@ if "parsed_task" in st.session_state:
         if st.button("❌ Cancel"):
             del st.session_state.parsed_task
             st.rerun()
+# ---------------- ACADEMIC SCHEDULE MANAGER ---------------- #
+
+from database.academic_db import (
+    init_academic_db, add_course, get_all_courses,
+    add_class_schedule, get_schedule_by_day,
+    add_exam, get_upcoming_exams
+)
+
+init_academic_db()
+
+st.subheader("🎓 Academic Schedule Manager")
+
+tab1, tab2, tab3 = st.tabs(["📚 Courses", "📅 Class Schedule", "📝 Exams"])
+
+# ---------------- TAB 1: COURSES ---------------- #
+
+with tab1:
+    st.write("### Add Course")
+    col1, col2 = st.columns(2)
+    with col1:
+        course_name = st.text_input("Course Name", placeholder="e.g. Data Structures")
+        course_code = st.text_input("Course Code", placeholder="e.g. CS301")
+    with col2:
+        credits = st.number_input("Credits", min_value=1, max_value=6, value=3)
+        professor = st.text_input("Professor", placeholder="e.g. Dr. Sharma")
+
+    if st.button("Add Course"):
+        if course_name:
+            add_course(course_name, course_code, credits, professor)
+            st.success(f"Course {course_name} added! ✅")
+        else:
+            st.warning("Please enter a course name!")
+
+    st.write("### Your Courses")
+    courses = get_all_courses()
+    if courses:
+        for c in courses:
+            st.write(f"📚 **{c[1]}** ({c[2]}) — {c[3]} credits — Prof. {c[4]}")
+    else:
+        st.info("No courses added yet!")
+
+# ---------------- TAB 2: CLASS SCHEDULE ---------------- #
+
+with tab2:
+    st.write("### Add Class")
+    courses = get_all_courses()
+
+    if courses:
+        course_options = {c[1]: c[0] for c in courses}
+        selected_course = st.selectbox("Select Course", list(course_options.keys()))
+        class_type = st.selectbox("Class Type", ["Lecture", "Lab", "Tutorial"])
+        day = st.selectbox("Day", ["Monday", "Tuesday", "Wednesday",
+                                    "Thursday", "Friday", "Saturday"])
+        col1, col2 = st.columns(2)
+        with col1:
+            start_time = st.time_input("Start Time", key="class_start")
+        with col2:
+            end_time = st.time_input("End Time", key="class_end")
+        room = st.text_input("Room", placeholder="e.g. Room 301")
+
+        if st.button("Add Class"):
+            add_class_schedule(
+                course_options[selected_course],
+                class_type, day,
+                str(start_time), str(end_time), room
+            )
+            st.success("Class added! ✅")
+
+        st.write("### View Schedule by Day")
+        view_day = st.selectbox("Select Day", ["Monday", "Tuesday", "Wednesday",
+                                                "Thursday", "Friday", "Saturday"],
+                                key="view_day")
+        if st.button("View Schedule"):
+            schedule = get_schedule_by_day(view_day)
+            if schedule:
+                for s in schedule:
+                    st.write(f"📖 **{s[0]}** ({s[1]}) — {s[2]} to {s[3]} | Room: {s[4]}")
+            else:
+                st.info(f"No classes on {view_day}!")
+    else:
+        st.warning("Please add courses first!")
+
+# ---------------- TAB 3: EXAMS ---------------- #
+
+with tab3:
+    st.write("### Add Exam")
+    courses = get_all_courses()
+
+    if courses:
+        course_options = {c[1]: c[0] for c in courses}
+        selected_course = st.selectbox("Select Course", list(course_options.keys()),
+                                        key="exam_course")
+        exam_type = st.selectbox("Exam Type", ["Mid Term", "End Term", "Quiz", "Practical"])
+        exam_date = st.date_input("Exam Date", key="exam_date")
+        exam_time = st.time_input("Exam Time", key="exam_time")
+        exam_room = st.text_input("Exam Room", placeholder="e.g. Hall A")
+
+        if st.button("Add Exam"):
+            add_exam(
+                course_options[selected_course],
+                exam_type, str(exam_date),
+                str(exam_time), exam_room
+            )
+            st.success("Exam added! ✅")
+
+        st.write("### Upcoming Exams")
+        exams = get_upcoming_exams()
+        if exams:
+            for e in exams:
+                st.write(f"📝 **{e[0]}** — {e[1]} on {e[2]} at {e[3]} | Room: {e[4]}")
+        else:
+            st.info("No exams scheduled yet!")
+    else:
+        st.warning("Please add courses first!")
+        # ---------------- SMART STUDY PLANNER (A2) ---------------- #
+
+from utils.study_planner import generate_study_plan, generate_weekly_plan, days_until_exam
+
+st.subheader("📖 Smart Study Planner")
+
+tab_a, tab_b, tab_c = st.tabs(["📅 Daily Plan", "🗓️ Weekly Plan", "⏰ Exam Countdown"])
+
+# ---------------- DAILY PLAN ---------------- #
+
+with tab_a:
+    st.write("### Generate Daily Study Plan")
+    
+    available_hours = st.slider("Available study hours today", 1, 12, 4, key="daily_hours")
+    
+    courses = get_all_courses()
+    if courses:
+        course_names = [c[1] for c in courses]
+        selected_subjects = st.multiselect("Select subjects to study", course_names, default=course_names[:3] if len(course_names) >= 3 else course_names)
+        priority = st.selectbox("Priority subject (gets more time)", ["None"] + course_names)
+        
+        if st.button("Generate Daily Plan"):
+            if selected_subjects:
+                priority_sub = None if priority == "None" else priority
+                plan = generate_study_plan(available_hours, selected_subjects, priority_sub)
+                
+                st.write("### 📋 Your Study Plan:")
+                for p in plan:
+                    st.write(f"📚 **{p['subject']}** → {p['hours']} hrs | Break after {p['break_after']} mins")
+                
+                total = sum(p['hours'] for p in plan)
+                st.info(f"Total study time: {round(total, 1)} hours")
+            else:
+                st.warning("Please select at least one subject!")
+    else:
+        st.warning("Please add courses first in Academic Schedule Manager!")
+
+# ---------------- WEEKLY PLAN ---------------- #
+
+with tab_b:
+    st.write("### Generate Weekly Study Plan")
+    
+    courses = get_all_courses()
+    if courses:
+        if st.button("Generate Weekly Plan"):
+            course_names = [c[1] for c in courses]
+            weekly = generate_weekly_plan(course_names)
+            
+            for day, subjects in weekly.items():
+                if subjects:
+                    st.write(f"**{day}:** {', '.join(subjects)}")
+                else:
+                    st.write(f"**{day}:** Rest day 😴")
+    else:
+        st.warning("Please add courses first!")
+
+# ---------------- EXAM COUNTDOWN ---------------- #
+
+with tab_c:
+    st.write("### Exam Countdown")
+    
+    exams = get_upcoming_exams()
+    if exams:
+        for e in exams:
+            days_left = days_until_exam(e[2])
+            if days_left is not None:
+                if days_left < 0:
+                    st.error(f"❌ **{e[0]}** {e[1]} — Already passed!")
+                elif days_left == 0:
+                    st.error(f"🚨 **{e[0]}** {e[1]} — TODAY!")
+                elif days_left <= 3:
+                    st.warning(f"⚠️ **{e[0]}** {e[1]} — {days_left} days left!")
+                else:
+                    st.success(f"✅ **{e[0]}** {e[1]} — {days_left} days left")
+    else:
+        st.info("No exams scheduled yet! Add them in Academic Schedule Manager.")
