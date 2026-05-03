@@ -1,10 +1,13 @@
 import streamlit as st
 import os
-from utils.scheduler import suggest_slots
+import json
+import re
+from datetime import datetime, timedelta, date as dt_date
 from dotenv import load_dotenv
 from cal.calender_service import add_event, get_upcoming_events
 from database.db import init_db, add_task, get_all_tasks, delete_task, mark_completed
 from utils.conflict_checker import check_conflict, find_free_slots
+from utils.scheduler import suggest_slots
 from groq import Groq
 
 load_dotenv()
@@ -23,32 +26,45 @@ def ask_gemini(prompt):
     except Exception as e:
         return f"AI error: {e}"
 
+# ---------------- NLP PARSER ---------------- #
+
 def parse_schedule_input(user_text):
-    prompt = f"""
-Extract task, date and time from this input:
-"{user_text}"
+    text = user_text.lower()
 
-Return ONLY in JSON format like:
-{{
-  "task": "...",
-  "date": "YYYY-MM-DD",
-  "time": "HH:MM:SS"
-}}
+    # STEP 1: EXTRACT TIME
+    time_match = re.search(r'(\d{1,2})\s*(am|pm)', text)
+    if not time_match:
+        return {"error": "Could not detect time"}
 
-If unclear, return:
-{{
-  "error": "Could not understand"
-}}
-"""
+    hour = int(time_match.group(1))
+    period = time_match.group(2)
+    if period == "pm" and hour != 12:
+        hour += 12
+    if period == "am" and hour == 12:
+        hour = 0
+    time_str = f"{hour:02d}:00:00"
+    text = text.replace(time_match.group(), "")
 
-    response = ask_gemini(prompt)
+    # STEP 2: EXTRACT DATE
+    if "tomorrow" in text:
+        date = datetime.now().date() + timedelta(days=1)
+        text = text.replace("tomorrow", "")
+    elif "today" in text:
+        date = datetime.now().date()
+        text = text.replace("today", "")
+    else:
+        date = datetime.now().date()
+    date_str = str(date)
 
-    import json
-    try:
-        data = json.loads(response)
-        return data
-    except:
-        return {"error": "Invalid AI response"}        
+    # STEP 3: CLEAN TASK
+    text = re.sub(r'\bat\b', '', text)
+    text = re.sub(r'\bschedule\b|\badd\b|\bcreate\b', '', text)
+    task = text.strip()
+
+    if not task:
+        return {"error": "Could not detect task"}
+
+    return {"task": task, "date": date_str, "time": time_str}
 
 # ---------------- APP START ---------------- #
 
@@ -60,7 +76,6 @@ if "chat_history" not in st.session_state:
 # ---------------- ADD TASK ---------------- #
 
 st.subheader("➕ Add Task")
-
 task = st.text_input("Enter task name")
 date = st.date_input("Select date")
 time = st.time_input("Select time")
@@ -70,15 +85,11 @@ if st.button("Add Task"):
         st.warning("Please enter a task name!")
     else:
         conflicts = check_conflict(date, time)
-
         if conflicts:
-            st.warning("⚠️ Conflict detected!")
-
+            st.warning(f"⚠️ Conflict detected with: {', '.join(conflicts)}")
             suggestions = suggest_slots(date, time)
-
             if suggestions:
-                st.info("Suggested slots (click to schedule):")
-
+                st.info("Suggested free slots:")
                 for i, (s_date, s_time) in enumerate(suggestions):
                     if st.button(f"{s_date} at {s_time}", key=f"suggest_{i}"):
                         add_task(task, s_date, s_time)
@@ -87,11 +98,11 @@ if st.button("Add Task"):
                         st.rerun()
             else:
                 st.error("No available slots found!")
-
         else:
             add_task(task, date, time)
             add_event(task, date, time)
             st.success("Task added + synced to Google Calendar ✅")
+
 # ---------------- DISPLAY TASKS ---------------- #
 
 st.subheader("📋 Your Tasks")
@@ -145,27 +156,19 @@ user_input = st.text_input("Your question",
 
 if st.button("Ask AI"):
     if user_input:
-
-        # 👉 HANDLE FREE TIME QUERY
         if "free time" in user_input.lower():
-            from datetime import date as dt_date
-
             today = dt_date.today()
             free = find_free_slots(today)
-
             if free:
                 st.success(f"Available slots today: {', '.join(free)}")
             else:
-                st.warning("No free slots today")
-
+                st.warning("No free slots today!")
         else:
-            # 👉 NORMAL AI RESPONSE
             tasks = get_all_tasks()
             task_context = "\n".join([
                 f"- {t[1]} on {t[2]} at {t[3]}"
                 for t in tasks
             ]) or "No tasks yet"
-
             prompt = f"""You are a smart student scheduling assistant.
 The student has these tasks:
 {task_context}
@@ -173,10 +176,8 @@ The student has these tasks:
 Student asks: {user_input}
 
 Give a helpful, concise scheduling suggestion."""
-
             with st.spinner("Thinking..."):
                 response = ask_gemini(prompt)
-
             st.session_state.chat_history.append({
                 "q": user_input,
                 "a": response
@@ -201,77 +202,32 @@ Include break times and study tips. Keep it concise."""
         plan = ask_gemini(prompt)
     st.success(plan)
 
-#UI for natural iput
-st.subheader("🧠 Smart Scheduling (AI)")
+# ---------------- SMART SCHEDULING ---------------- #
 
-nl_input = st.text_input(
-    "Describe your task",
-    placeholder="e.g. Study physics tomorrow at 5pm"
-)
+st.subheader("🧠 Smart Scheduling (NLP)")
+nl_input = st.text_input("Describe your task",
+    placeholder="e.g. Study physics tomorrow at 5pm")
 
 if st.button("Parse Schedule"):
     if nl_input:
         parsed = parse_schedule_input(nl_input)
-
         if "error" in parsed:
-            st.error("⚠️ Could not understand input. Please be clearer.")
+            st.error("⚠️ Could not understand. Try: 'Study Math tomorrow at 3pm'")
         else:
             st.session_state.parsed_task = parsed
 
-
-#show parsed result + confirm            
-def parse_schedule_input(user_text):
-    from datetime import datetime, timedelta
-    import re
-
-    text = user_text.lower()
-
-    # -------------------------------
-    # 🔹 STEP 1: EXTRACT TIME
-    # -------------------------------
-    time_match = re.search(r'(\d{1,2})\s*(am|pm)', text)
-    if not time_match:
-        return {"error": "Could not detect time"}
-
-    hour = int(time_match.group(1))
-    period = time_match.group(2)
-
-    if period == "pm" and hour != 12:
-        hour += 12
-    if period == "am" and hour == 12:
-        hour = 0
-
-    time_str = f"{hour:02d}:00:00"
-
-    # Remove time from text
-    text = text.replace(time_match.group(), "")
-
-    # -------------------------------
-    # 🔹 STEP 2: EXTRACT DATE
-    # -------------------------------
-    if "tomorrow" in text:
-        date = datetime.now().date() + timedelta(days=1)
-        text = text.replace("tomorrow", "")
-    elif "today" in text:
-        date = datetime.now().date()
-        text = text.replace("today", "")
-    else:
-        date = datetime.now().date()
-
-    date_str = str(date)
-
-    # -------------------------------
-    # 🔹 STEP 3: CLEAN TASK
-    # -------------------------------
-    # Remove filler words
-    text = re.sub(r'\bat\b', '', text)
-    task = text.strip()
-
-    if not task:
-        return {"error": "Could not detect task"}
-
-    return {
-        "task": task,
-        "date": date_str,
-        "time": time_str
-    }
+if "parsed_task" in st.session_state:
+    parsed = st.session_state.parsed_task
+    st.success(f"✅ Detected: **{parsed['task']}** on **{parsed['date']}** at **{parsed['time']}**")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Confirm & Add"):
+            add_task(parsed['task'], parsed['date'], parsed['time'])
+            add_event(parsed['task'], parsed['date'], parsed['time'])
+            st.success("Task added!")
+            del st.session_state.parsed_task
+            st.rerun()
+    with col2:
+        if st.button("❌ Cancel"):
+            del st.session_state.parsed_task
+            st.rerun()
