@@ -10,11 +10,6 @@ from datetime import datetime, timedelta, date as dt_date
 from dotenv import load_dotenv
 from cal.calender_service import add_event, get_upcoming_events
 from database.db import init_db, add_task, get_all_tasks, delete_task, mark_completed
-from database.academic_db import (
-    init_academic_db, add_course, get_all_courses,
-    add_class_schedule, get_schedule_by_day,
-    add_exam, get_upcoming_exams
-)
 from utils.conflict_checker import check_conflict, find_free_slots
 from utils.scheduler import suggest_slots
 from utils.study_planner import generate_study_plan, generate_weekly_plan, days_until_exam
